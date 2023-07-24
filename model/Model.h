@@ -27,10 +27,15 @@ public:
 	MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename);
 	void CreateViewport();
 	void CreateScissorRect();
-	void Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, bool useMonsterBall, D3D12_INDEX_BUFFER_VIEW* indexBufferViewSprite);
+	void Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, D3D12_INDEX_BUFFER_VIEW* indexBufferViewSprite, uint32_t textureIndex);
 	//マルチパスレンダリング
-	void CreateFirstPassPipelineStateObject();
-	void Draw();
+	void CreateSecondPassPipelineStateObject();
+	void SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource);
+	void CreateBlurPipelineStateObject();
+	void HorizontalBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource);
+	void VerticalBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource);
+	void HorizontalShrinkBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource);
+	void VerticalShrinkBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource);
 private:
 	//DirectX
 	DirectXCommon* directX_ = nullptr;
@@ -56,6 +61,11 @@ private:
 	VertexData vertexData[4];
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView_;
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_ = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12RootSignature> firstPassRootSignature_ = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> firstPassGraphicsPipelineState_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12RootSignature> secondPassRootSignature_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> secondPassGraphicsPipelineState_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12RootSignature> blurRootSignature_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> horizontalBlurGraphicsPipelineState_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> verticalBlurGraphicsPipelineState_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> horizontalShrinkBlurGraphicsPipelineState_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> verticalShrinkBlurGraphicsPipelineState_ = nullptr;
 };

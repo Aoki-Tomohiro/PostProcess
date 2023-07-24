@@ -23,7 +23,8 @@ void Model::Initialize(DirectXCommon* directX) {
 	vertexData[2] = { {1.0f,-1.0f,0.0f,1.0f},{1.0f,1.0f},{1.0f,-1.0f,0.0f} };
 	vertexData[3] = { {1.0f,1.0f,0.0f,1.0f},{1.0f,0.0f},{1.0f,1.0f,0.0f} };
 	vertexResource_ = Model::CreateVertexResource(vertexBufferView_, sizeof(VertexData) * 4, vertexData, 4);
-	Model::CreateFirstPassPipelineStateObject();
+	Model::CreateSecondPassPipelineStateObject();
+	Model::CreateBlurPipelineStateObject();
 }
 
 void Model::InitializeDXCCompiler() {
@@ -220,10 +221,13 @@ void Model::CreatePipelineStateObject() {
 	graphicsPipelineStateDesc.BlendState = blendDesc;//BlendState
 	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;//RasterizerState
 	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
-	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	/*graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;*/
+	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	//書き込むRTVの情報
-	graphicsPipelineStateDesc.NumRenderTargets = 1;
+	graphicsPipelineStateDesc.NumRenderTargets = 3;
 	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	graphicsPipelineStateDesc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	graphicsPipelineStateDesc.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	//利用するトポロジ(形状)のタイプ。三角形
 	graphicsPipelineStateDesc.PrimitiveTopologyType =
 		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -421,11 +425,9 @@ void Model::CreateScissorRect() {
 	scissorRect_.bottom = directX_->GetWinApp()->kClientHeight;
 }
 
-void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, bool useMonsterBall, D3D12_INDEX_BUFFER_VIEW* indexBufferView) {
+void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, D3D12_INDEX_BUFFER_VIEW* indexBufferView, uint32_t textureIndex) {
 	//GPUハンドルを取得
-	D3D12_GPU_DESCRIPTOR_HANDLE srvHandles[2];
-	srvHandles[0] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 1);
-	srvHandles[1] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 2);
+	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, textureIndex);
 
 	directX_->GetCommandList()->RSSetViewports(1, &viewport_);//viewportを設定
 	directX_->GetCommandList()->RSSetScissorRects(1, &scissorRect_);//Scissorを設定
@@ -440,7 +442,7 @@ void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, c
 	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(3, lightingResource->GetGPUVirtualAddress());
 	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(1, WVPResource->GetGPUVirtualAddress());
 	//SRVのDescriptorTableの先頭を設定。２はrootParameter[2]である。
-	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(2, useMonsterBall ? srvHandles[1] : srvHandles[0]);
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(2, srvHandle);
 	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	//描画！(DrawCall/ドローコール)。３頂点で一つのインスタンス、インスタンスについては今後
@@ -452,23 +454,40 @@ void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, c
 	}
 }
 
-void Model::CreateFirstPassPipelineStateObject() {
+void Model::CreateSecondPassPipelineStateObject() {
 	//RootSignature作成
 	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	//ディスクリプタレンジ
-	D3D12_DESCRIPTOR_RANGE descriptorRange{};
-	descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	descriptorRange.BaseShaderRegister = 0;
-	descriptorRange.NumDescriptors = 1;
+	D3D12_DESCRIPTOR_RANGE descriptorRange[3]{};
+	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descriptorRange[0].BaseShaderRegister = 0;
+	descriptorRange[0].NumDescriptors = 1;
+	descriptorRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descriptorRange[1].BaseShaderRegister = 1;
+	descriptorRange[1].NumDescriptors = 1;
+	descriptorRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descriptorRange[2].BaseShaderRegister = 2;
+	descriptorRange[2].NumDescriptors = 4;
 
 	//RootParameter作成。複数設定できるので配列。今回は結果一つだけなので長さ１の配列
-	D3D12_ROOT_PARAMETER rootParameters[1] = {};
+	D3D12_ROOT_PARAMETER rootParameters[4] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[0].DescriptorTable.pDescriptorRanges = &descriptorRange;
+	rootParameters[0].DescriptorTable.pDescriptorRanges = &descriptorRange[0];
 	rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[1].DescriptorTable.pDescriptorRanges = &descriptorRange[1];
+	rootParameters[1].DescriptorTable.NumDescriptorRanges = 1;
+	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[2].DescriptorTable.pDescriptorRanges = &descriptorRange[2];
+	rootParameters[2].DescriptorTable.NumDescriptorRanges = 1;
+	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
+	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderを使う
+	rootParameters[3].Descriptor.ShaderRegister = 0;//レジスタ番号０とバインド
 	descriptionRootSignature.pParameters = rootParameters;//ルートパラメータ配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);//配列の長さ
 
@@ -496,7 +515,7 @@ void Model::CreateFirstPassPipelineStateObject() {
 	}
 	//バイナリを元に生成
 	hr = directX_->GetDevice()->CreateRootSignature(0, signatureBlob_->GetBufferPointer(),
-		signatureBlob_->GetBufferSize(), IID_PPV_ARGS(&firstPassRootSignature_));
+		signatureBlob_->GetBufferSize(), IID_PPV_ARGS(&secondPassRootSignature_));
 	assert(SUCCEEDED(hr));
 
 
@@ -534,17 +553,17 @@ void Model::CreateFirstPassPipelineStateObject() {
 
 
 	//Shaderをコンパイルする
-	vertexShaderBlob_ = CompileShader(L"shader/FirstPassVS.hlsl",
+	vertexShaderBlob_ = CompileShader(L"shader/SecondPassVS.hlsl",
 		L"vs_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
 	assert(vertexShaderBlob_ != nullptr);
 
-	pixelShaderBlob_ = CompileShader(L"shader/FirstPassPS.hlsl",
+	pixelShaderBlob_ = CompileShader(L"shader/SecondPassPS.hlsl",
 		L"ps_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
 	assert(pixelShaderBlob_ != nullptr);
 
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
-	graphicsPipelineStateDesc.pRootSignature = firstPassRootSignature_.Get();//RootSignature
+	graphicsPipelineStateDesc.pRootSignature = secondPassRootSignature_.Get();//RootSignature
 	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc;//InputLayout
 	graphicsPipelineStateDesc.VS = { vertexShaderBlob_->GetBufferPointer(),
 	vertexShaderBlob_->GetBufferSize() };//VertexShader
@@ -553,9 +572,8 @@ void Model::CreateFirstPassPipelineStateObject() {
 	graphicsPipelineStateDesc.BlendState = blendDesc;//BlendState
 	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;//RasterizerState
 	//書き込むRTVの情報
-	graphicsPipelineStateDesc.NumRenderTargets = 2;
+	graphicsPipelineStateDesc.NumRenderTargets = 1;
 	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-	graphicsPipelineStateDesc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	//利用するトポロジ(形状)のタイプ。三角形
 	graphicsPipelineStateDesc.PrimitiveTopologyType =
 		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -563,25 +581,266 @@ void Model::CreateFirstPassPipelineStateObject() {
 	graphicsPipelineStateDesc.SampleDesc.Count = 1;
 	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 	//実際に生成
-	hr = directX_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&firstPassGraphicsPipelineState_));
+	hr = directX_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&secondPassGraphicsPipelineState_));
 	assert(SUCCEEDED(hr));
 }
 
-void Model::Draw() {
-	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 3);
+void Model::SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource) {
+	D3D12_GPU_DESCRIPTOR_HANDLE srvHandles[3];
+	srvHandles[0] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 3);
+	srvHandles[1] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 5);
+	srvHandles[2] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 7);
 
-	ID3D12DescriptorHeap* descriptorHeaps[] = { directX_->GetSRVDescriptorHeap().Get()};
-	directX_->GetCommandList()->SetDescriptorHeaps(1, descriptorHeaps);
 	directX_->GetCommandList()->RSSetViewports(1, &viewport_);//viewportを設定
 	directX_->GetCommandList()->RSSetScissorRects(1, &scissorRect_);//Scissorを設定
 	//RootSignatureを設定。PSOに設定しているけど別途設定が必要
-	directX_->GetCommandList()->SetGraphicsRootSignature(firstPassRootSignature_.Get());
-	directX_->GetCommandList()->SetPipelineState(firstPassGraphicsPipelineState_.Get());//PSOを設定
+	directX_->GetCommandList()->SetGraphicsRootSignature(secondPassRootSignature_.Get());
+	directX_->GetCommandList()->SetPipelineState(secondPassGraphicsPipelineState_.Get());//PSOを設定
 	directX_->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);//VBVを設定
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(3, fogResource->GetGPUVirtualAddress());
 	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	//SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である
-	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(0, srvHandle);
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(0, srvHandles[0]);
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(1, srvHandles[1]);
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(2, srvHandles[2]);
+	//描画！(DrawCall/ドローコール)。３頂点で一つのインスタンス、インスタンスについては今後
+	directX_->GetCommandList()->DrawInstanced(4, 1, 0, 0);
+}
+
+void Model::CreateBlurPipelineStateObject() {
+	//RootSignature作成
+	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
+	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+	//DescriptorRange
+	D3D12_DESCRIPTOR_RANGE descriptorRange[1] = {};
+	descriptorRange[0].BaseShaderRegister = 0;//0から始まる
+	descriptorRange[0].NumDescriptors = 1;//数は一つ
+	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;//SRVを使う
+
+	//RootParameter作成。複数設定できるので配列。今回は結果一つだけなので長さ一の配列
+	D3D12_ROOT_PARAMETER rootParameters[2] = {};
+	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
+	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//VertexShaderを使う
+	rootParameters[0].Descriptor.ShaderRegister = 0;//レジスタ番号０を使う
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;//DescriptorTableを使う
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderで使う
+	rootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRange;//Tableの中身の配列を指定
+	rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);//Tableで利用する数
+	descriptionRootSignature.pParameters = rootParameters;//ルートパラメーター配列へのポインタ
+	descriptionRootSignature.NumParameters = _countof(rootParameters);//配列の長さ
+
+	//Sampler
+	D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
+	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;//バイリニアフィルタ
+	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;//０～１の範囲外をリピート
+	staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;//比較しない
+	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;//ありったけのMipmapを使う
+	staticSamplers[0].ShaderRegister = 0;
+	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderで使う
+	descriptionRootSignature.pStaticSamplers = staticSamplers;
+	descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
+
+	//シリアライズしてバイナリにする
+	HRESULT hr = D3D12SerializeRootSignature(&descriptionRootSignature,
+		D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob_, &errorBlob_);
+	if (FAILED(hr)) {
+		directX_->GetWinApp()->Log(reinterpret_cast<char*>(errorBlob_->GetBufferPointer()));
+		assert(false);
+	}
+	//バイナリを元に生成
+	hr = directX_->GetDevice()->CreateRootSignature(0, signatureBlob_->GetBufferPointer(),
+		signatureBlob_->GetBufferSize(), IID_PPV_ARGS(&blurRootSignature_));
+	assert(SUCCEEDED(hr));
+
+	//InputLayout
+	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
+	inputElementDescs[0].SemanticName = "POSITION";
+	inputElementDescs[0].SemanticIndex = 0;
+	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	inputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	inputElementDescs[1].SemanticName = "TEXCOORD";
+	inputElementDescs[1].SemanticIndex = 0;
+	inputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
+	inputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	inputElementDescs[2].SemanticName = "NORMAL";
+	inputElementDescs[2].SemanticIndex = 0;
+	inputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
+	inputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
+	inputLayoutDesc.pInputElementDescs = inputElementDescs;
+	inputLayoutDesc.NumElements = _countof(inputElementDescs);
+
+	//BlendStateの設定
+	//すべての色要素を書き込む
+	D3D12_BLEND_DESC blendDesc{};
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	//RasterizerStateの設定を行う
+	//裏面(時計回り)を表示しない
+	D3D12_RASTERIZER_DESC rasterizerDesc{};
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	//三角形の中を塗りつぶす
+	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
+
+	//Shaderをコンパイルする
+	vertexShaderBlob_ = CompileShader(L"Shader/BlurVS.hlsl",
+		L"vs_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(vertexShaderBlob_ != nullptr);
+
+	pixelShaderBlob_ = CompileShader(L"Shader/HorizontalBlurPS.hlsl",
+		L"ps_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(pixelShaderBlob_ != nullptr);
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
+	graphicsPipelineStateDesc.pRootSignature = blurRootSignature_.Get();//RootSignature
+	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc;//InputLayout
+	graphicsPipelineStateDesc.VS = { vertexShaderBlob_->GetBufferPointer(),
+	vertexShaderBlob_->GetBufferSize() };//VertexShader
+	graphicsPipelineStateDesc.PS = { pixelShaderBlob_->GetBufferPointer(),
+	pixelShaderBlob_->GetBufferSize() };//PixelShader
+	graphicsPipelineStateDesc.BlendState = blendDesc;//BlendState
+	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;//RasterizerState
+	//書き込むRTVの情報
+	graphicsPipelineStateDesc.NumRenderTargets = 1;
+	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	//利用するトポロジ(形状)のタイプ。三角形
+	graphicsPipelineStateDesc.PrimitiveTopologyType =
+		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	//どのように画面に色を打ち込むかの設定(気にしなくて良い)
+	graphicsPipelineStateDesc.SampleDesc.Count = 1;
+	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+	//実際に生成
+	hr = directX_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&horizontalBlurGraphicsPipelineState_));
+	assert(SUCCEEDED(hr));
+
+	//縦ぼかし
+	vertexShaderBlob_ = CompileShader(L"Shader/BlurVS.hlsl",
+		L"vs_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(vertexShaderBlob_ != nullptr);
+
+	pixelShaderBlob_ = CompileShader(L"Shader/VerticalBlurPS.hlsl",
+		L"ps_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(pixelShaderBlob_ != nullptr);
+
+	graphicsPipelineStateDesc.VS = { vertexShaderBlob_->GetBufferPointer(),
+	vertexShaderBlob_->GetBufferSize() };//VertexShader
+	graphicsPipelineStateDesc.PS = { pixelShaderBlob_->GetBufferPointer(),
+	pixelShaderBlob_->GetBufferSize() };//PixelShader
+
+	hr = directX_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&verticalBlurGraphicsPipelineState_));
+	assert(SUCCEEDED(hr));
+
+
+	//縮小横ぼかし
+	vertexShaderBlob_ = CompileShader(L"Shader/BlurVS.hlsl",
+		L"vs_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(vertexShaderBlob_ != nullptr);
+
+	pixelShaderBlob_ = CompileShader(L"Shader/HorizontalShrinkBlurPS.hlsl",
+		L"ps_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(pixelShaderBlob_ != nullptr);
+
+	graphicsPipelineStateDesc.VS = { vertexShaderBlob_->GetBufferPointer(),
+	vertexShaderBlob_->GetBufferSize() };//VertexShader
+	graphicsPipelineStateDesc.PS = { pixelShaderBlob_->GetBufferPointer(),
+	pixelShaderBlob_->GetBufferSize() };//PixelShader
+
+	hr = directX_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&horizontalShrinkBlurGraphicsPipelineState_));
+	assert(SUCCEEDED(hr));
+
+
+	//縮小縦ぼかし
+	vertexShaderBlob_ = CompileShader(L"Shader/BlurVS.hlsl",
+		L"vs_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(vertexShaderBlob_ != nullptr);
+
+	pixelShaderBlob_ = CompileShader(L"Shader/VerticalShrinkBlurPS.hlsl",
+		L"ps_6_0", dxcUtils_, dxcCompiler_, includeHandler_);
+	assert(pixelShaderBlob_ != nullptr);
+
+	graphicsPipelineStateDesc.VS = { vertexShaderBlob_->GetBufferPointer(),
+	vertexShaderBlob_->GetBufferSize() };//VertexShader
+	graphicsPipelineStateDesc.PS = { pixelShaderBlob_->GetBufferPointer(),
+	pixelShaderBlob_->GetBufferSize() };//PixelShader
+
+	hr = directX_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&verticalShrinkBlurGraphicsPipelineState_));
+	assert(SUCCEEDED(hr));
+}
+
+void Model::HorizontalBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource) {
+	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 3);
+	directX_->GetCommandList()->RSSetViewports(1, &viewport_);//viewportを設定
+	directX_->GetCommandList()->RSSetScissorRects(1, &scissorRect_);//Scissorを設定
+	//RootSignatureを設定。PSOに設定しているけど別途設定が必要
+	directX_->GetCommandList()->SetGraphicsRootSignature(blurRootSignature_.Get());
+	directX_->GetCommandList()->SetPipelineState(horizontalBlurGraphicsPipelineState_.Get());//PSOを設定
+	directX_->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);//VBVを設定
+	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
+	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(0, bkResource->GetGPUVirtualAddress());
+	//SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(1, srvHandle);
+	//描画！(DrawCall/ドローコール)。３頂点で一つのインスタンス、インスタンスについては今後
+	directX_->GetCommandList()->DrawInstanced(4, 1, 0, 0);
+}
+
+void Model::VerticalBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource) {
+	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 4);
+	directX_->GetCommandList()->RSSetViewports(1, &viewport_);//viewportを設定
+	directX_->GetCommandList()->RSSetScissorRects(1, &scissorRect_);//Scissorを設定
+	//RootSignatureを設定。PSOに設定しているけど別途設定が必要
+	directX_->GetCommandList()->SetGraphicsRootSignature(blurRootSignature_.Get());
+	directX_->GetCommandList()->SetPipelineState(verticalBlurGraphicsPipelineState_.Get());//PSOを設定
+	directX_->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);//VBVを設定
+	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
+	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(0, bkResource->GetGPUVirtualAddress());
+	//SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(1, srvHandle);
+	//描画！(DrawCall/ドローコール)。３頂点で一つのインスタンス、インスタンスについては今後
+	directX_->GetCommandList()->DrawInstanced(4, 1, 0, 0);
+}
+
+void  Model::HorizontalShrinkBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource) {
+	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 3);
+	D3D12_VIEWPORT viewport{};
+	viewport.Height = float(directX_->GetWinApp()->kClientHeight) / 2;
+	viewport.Width = float(directX_->GetWinApp()->kClientWidth) / 2;
+	directX_->GetCommandList()->RSSetViewports(1, &viewport);//viewportを設定
+	directX_->GetCommandList()->RSSetScissorRects(1, &scissorRect_);//Scissorを設定
+	//RootSignatureを設定。PSOに設定しているけど別途設定が必要
+	directX_->GetCommandList()->SetGraphicsRootSignature(blurRootSignature_.Get());
+	directX_->GetCommandList()->SetPipelineState(horizontalShrinkBlurGraphicsPipelineState_.Get());//PSOを設定
+	directX_->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);//VBVを設定
+	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
+	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(0, bkResource->GetGPUVirtualAddress());
+	//SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(1, srvHandle);
+	//描画！(DrawCall/ドローコール)。３頂点で一つのインスタンス、インスタンスについては今後
+	directX_->GetCommandList()->DrawInstanced(4, 1, 0, 0);
+}
+
+void Model::VerticalShrinkBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource) {
+	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 6);
+	D3D12_VIEWPORT viewport{};
+	viewport.Height = float(directX_->GetWinApp()->kClientHeight) / 2;
+	viewport.Width = float(directX_->GetWinApp()->kClientWidth) / 2;
+	directX_->GetCommandList()->RSSetViewports(1, &viewport);//viewportを設定
+	directX_->GetCommandList()->RSSetScissorRects(1, &scissorRect_);//Scissorを設定
+	//RootSignatureを設定。PSOに設定しているけど別途設定が必要
+	directX_->GetCommandList()->SetGraphicsRootSignature(blurRootSignature_.Get());
+	directX_->GetCommandList()->SetPipelineState(verticalShrinkBlurGraphicsPipelineState_.Get());//PSOを設定
+	directX_->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);//VBVを設定
+	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
+	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(0, bkResource->GetGPUVirtualAddress());
+	//SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である
+	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(1, srvHandle);
 	//描画！(DrawCall/ドローコール)。３頂点で一つのインスタンス、インスタンスについては今後
 	directX_->GetCommandList()->DrawInstanced(4, 1, 0, 0);
 }

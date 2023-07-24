@@ -50,6 +50,14 @@ public:
 	void CreateMultiPassSRV();
 	void FirstPassPreDraw();
 	void FirstPassPostDraw();
+	void PreHorizontalBlur();
+	void PostHorizontalBlur();
+	void PreVerticalBlur();
+	void PostVerticalBlur();
+	void PreHorizontalShrinkBlur();
+	void PostHorizontalShrinkBlur();
+	void PreVerticalShrinkBlur();
+	void PostVerticalShrinkBlur();
 private:
 	//WinApp
 	WinApp* winApp_ = nullptr;
@@ -87,4 +95,8 @@ private:
 	//マルチパスレンダリング
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> multiPassRTVDescriptorHeap_ = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12Resource> firstPassResource_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> blurResource_[2];
+	Microsoft::WRL::ComPtr<ID3D12Resource> shrinkBlurResource_[2];
+	Microsoft::WRL::ComPtr<ID3D12Resource> depthResource_ = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> dofDepthResource_ = nullptr;
 };	

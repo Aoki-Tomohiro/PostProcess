@@ -68,6 +68,13 @@ struct ModelData {
 	MaterialData material;
 };
 
+struct FogParameter {
+	float nearClip;
+	float farClip;
+	float scale;
+	float attenuationRate;
+};
+
 Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2);
 
 Matrix4x4 Inverse(const Matrix4x4& m);
@@ -96,3 +103,5 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 Matrix4x4 MakeScaleMatrix(const Vector3& scale);
 
 Matrix4x4 MakeTranslateMatrix(const Vector3& translate);
+
+Matrix4x4 Transpose(const Matrix4x4& m);

@@ -7,6 +7,25 @@
 #include "imgui_impl_DX12.h"
 #include "D3DResourceLeakChecker.h"
 
+struct Weights {
+	float weight[8];
+};
+
+Weights GaussianWeights(float s) {
+	Weights weights;
+	float total = 0.0f;
+	for (int i = 0; i < 8; i++) {
+		weights.weight[i] = expf(-(i * i) / (2 * s * s));
+		total += weights.weight[i];
+	}
+	total = total * 2.0f - 1.0f;
+	//最終的な合計値で重みをわる
+	for (int i = 0; i < 8; i++) {
+		weights.weight[i] /= total;
+	}
+	return weights;
+}
+
 //Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd) {
 
@@ -36,56 +55,46 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();//リソースの先頭のアドレスから使う
 	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());//使用するリソースのサイズは頂点のサイズ
 	vertexBufferView.StrideInBytes = sizeof(VertexData);
-
 	//頂点リソースにデータを書き込む
 	VertexData* vertexData = nullptr;
 	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));//書き込むためのアドレスを取得
 	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData)* modelData.vertices.size());
 
-	//Sprite用の頂点リソース
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = nullptr;
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
-	VertexData vertexDataSprite[4];
-	vertexDataSprite[0].position = { 0.0f,360.0f,0.0f,1.0f };//左下
-	vertexDataSprite[0].texcoord = { 0.0f,1.0f };
-	vertexDataSprite[0].normal = { 0.0f,0.0f,-1.0f };
-	vertexDataSprite[1].position = { 0.0f,0.0f,0.0f,1.0f };//左上
-	vertexDataSprite[1].texcoord = { 0.0f,0.0f };
-	vertexDataSprite[1].normal = { 0.0f,0.0f,-1.0f };
-	vertexDataSprite[2].position = { 640.0f,360.0f,0.0f,1.0f };//右下
-	vertexDataSprite[2].texcoord = { 1.0f,1.0f };
-	vertexDataSprite[2].normal = { 0.0f,0.0f,-1.0f };
-	vertexDataSprite[3].position = { 640.0f,0.0f,0.0f,1.0f };//右上
-	vertexDataSprite[3].texcoord = { 1.0f,0.0f };
-	vertexDataSprite[3].normal = { 0.0f,0.0f, -1.0f };
-	vertexResourceSprite = model->CreateVertexResource(vertexBufferViewSprite, sizeof(vertexDataSprite), vertexDataSprite, 4);
+	//モデル読み込み
+	ModelData modelData2 = model->LoadObjFile("resource/skydome", "skydome.obj");
+	//頂点リソースを作る
+	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource2 = model->CreateBufferResource(directX->GetDevice(), sizeof(VertexData) * modelData2.vertices.size());
+	//頂点バッファビューを作成する
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView2{};
+	vertexBufferView2.BufferLocation = vertexResource2->GetGPUVirtualAddress();//リソースの先頭のアドレスから使う
+	vertexBufferView2.SizeInBytes = UINT(sizeof(VertexData) * modelData2.vertices.size());//使用するリソースのサイズは頂点のサイズ
+	vertexBufferView2.StrideInBytes = sizeof(VertexData);
+	//頂点リソースにデータを書き込む
+	VertexData* vertexData2 = nullptr;
+	vertexResource2->Map(0, nullptr, reinterpret_cast<void**>(&vertexData2));//書き込むためのアドレスを取得
+	std::memcpy(vertexData2, modelData2.vertices.data(), sizeof(VertexData) * modelData2.vertices.size());
 
 	//マテリアルデータ
 	Microsoft::WRL::ComPtr<ID3D12Resource> materialResource = nullptr;
-	Material* materialDataSphere = new Material;
-	materialDataSphere->color = { 1.0f,1.0f,1.0f,1.0f };
-	materialDataSphere->enableLighting = true;
-	materialDataSphere->uvTransform = MakeIdentity4x4();
-	materialResource = model->CreateMaterialData(materialDataSphere);
-	Microsoft::WRL::ComPtr<ID3D12Resource> materialResourceSprite = nullptr;
-	Material* materialDataSprite = new Material;
-	materialDataSprite->color = { 1.0f,1.0f,1.0f,1.0f };
-	materialDataSprite->enableLighting = false;
-	materialDataSprite->uvTransform = MakeIdentity4x4();
-	materialResourceSprite = model->CreateMaterialData(materialDataSprite);
-	Transform uvTransformSprite{
+	Material* materialData = new Material;
+	materialData->color = { 1.0f,1.0f,1.0f,1.0f };
+	materialData->enableLighting = false;
+	materialData->uvTransform = MakeIdentity4x4();
+	materialResource = model->CreateMaterialData(materialData);
+	Transform uvTransform{
 		{1.0f,1.0f,1.0f},
 		{0.0f,0.0f,0.0f},
 		{0.0f,0.0f,0.0f},
 	};
 
 	//WVP用リソース
-	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
-	Transform transform = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,0.0f} };
 	Transform cameraTransform = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,-10.0f} };
-	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResourceSprite = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
-	Transform transformSprite = { { 1.0f,1.0f,1.0f }, { 0.0f,0.0f,0.0f }, { 0.0f,0.0f,0.0f } };
-	bool useMonsterBall = true;
+	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
+	Transform transform = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{-1.5f,0.0f,5.0f} };
+	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData2 = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
+	Transform transform2 = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{1.5f,0.0f,0.0f} };
+	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData3 = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
+	Transform transform3 = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,-10.0f,50.0f} };
 
 	//Lighting
 	Microsoft::WRL::ComPtr<ID3D12Resource> lightingResource = model->CreateBufferResource(directX->GetDevice(), sizeof(DirectionalLight));
@@ -94,25 +103,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 	lightingResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLight));
 	*directionalLight = lightingData;
 
-	//IndexResource
-	Microsoft::WRL::ComPtr<ID3D12Resource> indexResourceSprite = model->CreateBufferResource(directX->GetDevice(), sizeof(uint32_t) * 6);
-	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
-	//リソースの先頭のアドレスから使う
-	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
-	//使用するリソースのサイズはインデックス6つ分のサイズ
-	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6;
-	//インデックスはuint32_tとする
-	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;
-	//インデックスリソースにデータを書き込む
-	uint32_t* indexDataSprite = nullptr;
-	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSprite));
-	indexDataSprite[0] = 0;
-	indexDataSprite[1] = 1;
-	indexDataSprite[2] = 2;
-	indexDataSprite[3] = 1;
-	indexDataSprite[4] = 3;
-	indexDataSprite[5] = 2;
-
 	//Textureを読んで転送する
 	DirectX::ScratchImage mipImages = directX->LoadTexture("resource/uvChecker.png");
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
@@ -120,12 +110,22 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource_ = directX->UploadTextureData(textureResource_, mipImages, directX->GetDevice(), directX->GetCommandList());
 	directX->CreateShaderResourceView(textureResource_,metadata, 1);
 	//2枚目のテクスチャを読んで転送する
-	DirectX::ScratchImage mipImages2 = directX->LoadTexture(modelData.material.textureFilePath);
+	DirectX::ScratchImage mipImages2 = directX->LoadTexture(modelData2.material.textureFilePath);
 	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2_ = directX->CreateTextureResource(directX->GetDevice(), metadata2);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2_ = directX->UploadTextureData(textureResource2_, mipImages2, directX->GetDevice(), directX->GetCommandList());
 	directX->CreateShaderResourceView(textureResource2_, metadata2, 2);
 
+	//Fog
+	Microsoft::WRL::ComPtr<ID3D12Resource> fogResource = model->CreateBufferResource(directX->GetDevice(), sizeof(FogParameter));
+	FogParameter fogParameter = { 0.1f,30.0f,0.5f,0.5f };
+
+	//ぼかし
+	Microsoft::WRL::ComPtr<ID3D12Resource> blurResource = model->CreateBufferResource(directX->GetDevice(), sizeof(Weights));
+	Weights* mappedWeight = nullptr;
+	float s = 5.0f;
+	blurResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedWeight));
+	*mappedWeight = GaussianWeights(s);
 
 	//ImGuiの初期化
 	IMGUI_CHECKVERSION();
@@ -150,59 +150,88 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 		//ゲーム処理
-		//三角形
-		/*transform.rotate.y += 0.03f;*/
-		Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
 		Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(winApp->kClientWidth) / float(winApp->kClientHeight), 0.1f, 100.0f);
+		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(45.0f * 3.141592654f / 180.0f, float(winApp->kClientWidth) / float(winApp->kClientHeight), 0.1f, 100.0f);
+
+		Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
 		TransformationMatrix worldViewProjectionMatrix = { Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix)),worldMatrix };
 		model->UpdateMatrix(transformationMatrixData, worldViewProjectionMatrix);
 
-		//sprite
-		Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
-		Matrix4x4 viewMatrixSprite = MakeIdentity4x4();
-		Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(winApp->kClientWidth), float(winApp->kClientHeight), 0.0f, 100.0f);
-		TransformationMatrix worldViewProjectionMatrixSprite = { Multiply(worldMatrixSprite, Multiply(viewMatrixSprite, projectionMatrixSprite)),worldMatrixSprite };
-		model->UpdateMatrix(transformationMatrixResourceSprite, worldViewProjectionMatrixSprite);
+		Matrix4x4 worldMatrix2 = MakeAffineMatrix(transform2.scale, transform2.rotate, transform2.translate);
+		TransformationMatrix worldViewProjectionMatrix2 = { Multiply(worldMatrix2, Multiply(viewMatrix, projectionMatrix)),worldMatrix2 };
+		model->UpdateMatrix(transformationMatrixData2, worldViewProjectionMatrix2);
+
+		Matrix4x4 worldMatrix3 = MakeAffineMatrix(transform3.scale, transform3.rotate, transform3.translate);
+		TransformationMatrix worldViewProjectionMatrix3 = { Multiply(worldMatrix3, Multiply(viewMatrix, projectionMatrix)),worldMatrix3 };
+		model->UpdateMatrix(transformationMatrixData3, worldViewProjectionMatrix3);
+
+		//uvTransform
+		Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransform.scale);
+		uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransform.rotate.z));
+		uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransform.translate));
+		materialData->uvTransform = uvTransformMatrix;
+		model->UpdateMaterialData(materialResource, materialData);
 
 		//lighting
 		lightingResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLight));
 		*directionalLight = lightingData;
 
-		//uvTransform
-		Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransformSprite.scale);
-		uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
-		uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
-		materialDataSprite->uvTransform = uvTransformMatrix;
-		model->UpdateMaterialData(materialResourceSprite, materialDataSprite);
+		//FogParameter
+		FogParameter* fog = nullptr;
+		fogResource->Map(0, nullptr, reinterpret_cast<void**>(&fog));
+		*fog = fogParameter;
+
+		//ぼかし
+		blurResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedWeight));
+		*mappedWeight = GaussianWeights(s);
 
 		ImGui::Begin("Window");
-		ImGui::DragFloat3("SphereTranslate", &transform.translate.x, 0.01f);
-		ImGui::DragFloat3("SphereRotate", &transform.rotate.x, 0.01f);
-		ImGui::DragFloat3("SphereScale", &transform.scale.x, 0.01f);
-		ImGui::Checkbox("useMonsterBall", &useMonsterBall);
-		ImGui::DragFloat3("spriteTransform", &transformSprite.translate.x, 1.0f);
-		ImGui::DragFloat3("cameraScale", &cameraTransform.scale.x, 0.01f);
-		ImGui::DragFloat3("cameraRotate", &cameraTransform.rotate.x, 0.01f);
-		ImGui::DragFloat3("cameraTranslate", &cameraTransform.translate.x, 0.01f);
-		ImGui::DragFloat3("lightDirection", &lightingData.direction.x, 0.01f);
-		ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
-		ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
-		ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
+		ImGui::DragFloat3("Camera:scale", &cameraTransform.scale.x, 0.01f);
+		ImGui::DragFloat3("Camera:rotate", &cameraTransform.rotate.x, 0.01f);
+		ImGui::DragFloat3("Camera:translate", &cameraTransform.translate.x, 0.01f);
+		ImGui::DragFloat3("plane1:scale", &transform.scale.x, 0.01f);
+		ImGui::DragFloat3("plane1:rotate", &transform.rotate.x, 0.01f);
+		ImGui::DragFloat3("plane1:translate", &transform.translate.x, 0.01f);
+		ImGui::DragFloat3("plane2:scale", &transform2.scale.x, 0.01f);
+		ImGui::DragFloat3("plane2:rotate", &transform2.rotate.x, 0.01f);
+		ImGui::DragFloat3("plane2:translate", &transform2.translate.x, 0.01f);
+		ImGui::DragFloat("fog:nearClip", &fogParameter.nearClip, 0.01f);
+		ImGui::DragFloat("fog:farClip", &fogParameter.farClip, 0.01f);
+		ImGui::DragFloat("fog:scale", &fogParameter.scale, 0.01f);
+		ImGui::DragFloat("fog:attenuationRate", &fogParameter.attenuationRate, 0.01f);
 		ImGui::End();
 
 		//描画始まり
 		ImGui::Render();
 		//一パス目
 		directX->FirstPassPreDraw();
-		//オブジェクトの描画
-		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData, lightingResource, useMonsterBall, nullptr);
-		//model->Draw(&vertexBufferViewSprite, 6, materialResourceSprite, transformationMatrixResourceSprite, lightingResource, false, &indexBufferViewSprite);
+		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData, lightingResource, nullptr,1);
+		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData2, lightingResource, nullptr,1);
+		model->Draw(&vertexBufferView2, UINT(modelData2.vertices.size()), materialResource, transformationMatrixData3, lightingResource, nullptr, 2);
 		directX->FirstPassPostDraw();
 
+		//横ぼかし
+		directX->PreHorizontalBlur();
+		model->HorizontalBlur(blurResource);
+		directX->PostHorizontalBlur();
+		//縦ぼかし
+		directX->PreVerticalBlur();
+		model->VerticalBlur(blurResource);
+		directX->PostVerticalBlur();
+
+		//横縮小ぼかし
+		directX->PreHorizontalShrinkBlur();
+		model->HorizontalShrinkBlur(blurResource);
+		directX->PostHorizontalShrinkBlur();
+		//縦縮小ぼかし
+		directX->PreVerticalShrinkBlur();
+		model->VerticalShrinkBlur(blurResource);
+		directX->PostVerticalShrinkBlur();
+
+		//最終レンダリング
 		directX->PreDraw();
-		model->Draw();
+		model->SecondPassDraw(fogResource);
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), directX->GetCommandList().Get());
 		directX->PostDraw();
 	}
