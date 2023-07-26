@@ -115,7 +115,7 @@ void Model::CreatePipelineStateObject() {
 	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;//Offsetを自動計算
 
 	//RootParameter作成。複数設定できるので配列。今回は結果一つだけなので長さ１の配列
-	D3D12_ROOT_PARAMETER rootParameters[4] = {};
+	D3D12_ROOT_PARAMETER rootParameters[5] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderを使う
 	rootParameters[0].Descriptor.ShaderRegister = 0;//レジスタ番号０とバインド
@@ -129,6 +129,9 @@ void Model::CreatePipelineStateObject() {
 	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
 	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderで使う
 	rootParameters[3].Descriptor.ShaderRegister = 1;//レジスタ番号１を使う
+	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
+	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;//PixelShaderで使う
+	rootParameters[4].Descriptor.ShaderRegister = 1;//レジスタ番号１を使う
 	descriptionRootSignature.pParameters = rootParameters;//ルートパラメータ配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);//配列の長さ
 
@@ -224,10 +227,9 @@ void Model::CreatePipelineStateObject() {
 	/*graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;*/
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	//書き込むRTVの情報
-	graphicsPipelineStateDesc.NumRenderTargets = 3;
+	graphicsPipelineStateDesc.NumRenderTargets = 2;
 	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	graphicsPipelineStateDesc.RTVFormats[1] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-	graphicsPipelineStateDesc.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	//利用するトポロジ(形状)のタイプ。三角形
 	graphicsPipelineStateDesc.PrimitiveTopologyType =
 		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -425,7 +427,7 @@ void Model::CreateScissorRect() {
 	scissorRect_.bottom = directX_->GetWinApp()->kClientHeight;
 }
 
-void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, D3D12_INDEX_BUFFER_VIEW* indexBufferView, uint32_t textureIndex) {
+void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, D3D12_INDEX_BUFFER_VIEW* indexBufferView, uint32_t textureIndex, const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource) {
 	//GPUハンドルを取得
 	D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, textureIndex);
 
@@ -441,6 +443,7 @@ void Model::Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, c
 	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
 	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(3, lightingResource->GetGPUVirtualAddress());
 	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(1, WVPResource->GetGPUVirtualAddress());
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(4, fogResource->GetGPUVirtualAddress());
 	//SRVのDescriptorTableの先頭を設定。２はrootParameter[2]である。
 	directX_->GetCommandList()->SetGraphicsRootDescriptorTable(2, srvHandle);
 	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
@@ -469,10 +472,10 @@ void Model::CreateSecondPassPipelineStateObject() {
 	descriptorRange[1].NumDescriptors = 1;
 	descriptorRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	descriptorRange[2].BaseShaderRegister = 2;
-	descriptorRange[2].NumDescriptors = 4;
+	descriptorRange[2].NumDescriptors = 2;
 
 	//RootParameter作成。複数設定できるので配列。今回は結果一つだけなので長さ１の配列
-	D3D12_ROOT_PARAMETER rootParameters[4] = {};
+	D3D12_ROOT_PARAMETER rootParameters[7] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[0].DescriptorTable.pDescriptorRanges = &descriptorRange[0];
@@ -488,6 +491,15 @@ void Model::CreateSecondPassPipelineStateObject() {
 	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
 	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderを使う
 	rootParameters[3].Descriptor.ShaderRegister = 0;//レジスタ番号０とバインド
+	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
+	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderを使う
+	rootParameters[4].Descriptor.ShaderRegister = 1;//レジスタ番号０とバインド
+	rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
+	rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderを使う
+	rootParameters[5].Descriptor.ShaderRegister = 2;//レジスタ番号０とバインド
+	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;//CBVを使う
+	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;//PixelShaderを使う
+	rootParameters[6].Descriptor.ShaderRegister = 3;//レジスタ番号０とバインド
 	descriptionRootSignature.pParameters = rootParameters;//ルートパラメータ配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);//配列の長さ
 
@@ -585,7 +597,7 @@ void Model::CreateSecondPassPipelineStateObject() {
 	assert(SUCCEEDED(hr));
 }
 
-void Model::SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource) {
+void Model::SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& dofResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lensDistortionResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& vignetteResource) {
 	D3D12_GPU_DESCRIPTOR_HANDLE srvHandles[3];
 	srvHandles[0] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 3);
 	srvHandles[1] = directX_->GetGPUDescriptorHandle(directX_->GetSRVDescriptorHeap(), directX_->descriptorSizeSRV, 5);
@@ -598,6 +610,9 @@ void Model::SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogReso
 	directX_->GetCommandList()->SetPipelineState(secondPassGraphicsPipelineState_.Get());//PSOを設定
 	directX_->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);//VBVを設定
 	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(3, fogResource->GetGPUVirtualAddress());
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(4, dofResource->GetGPUVirtualAddress());
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(5, lensDistortionResource->GetGPUVirtualAddress());
+	directX_->GetCommandList()->SetGraphicsRootConstantBufferView(6, vignetteResource->GetGPUVirtualAddress());
 	//形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 	directX_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	//SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である

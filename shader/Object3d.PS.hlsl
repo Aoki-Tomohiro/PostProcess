@@ -19,35 +19,8 @@ SamplerState gSampler : register(s0);
 
 struct PixelShaderOutput {
 	float32_t4 color : SV_TARGET0;
-	float32_t4 linerDepth : SV_TARGET1;
-	float32_t4 dofDepth : SV_TARGET2;
+	float32_t4 depth : SV_TARGET1;
 };
-
-float4 convRGBA(float depth) {
-	float r = depth;
-	float g = frac(r * 255.0);
-	float b = frac(g * 255.0);
-	float a = frac(b * 255.0);
-	float coef = 1.0 / 255.0;
-	r -= g * coef;
-	g -= b * coef;
-	b -= a * coef;
-	return float4(r, g, b, a);
-}
-
-float convCoord(float depth, float offset) {
-	float d = clamp(depth + offset, 0.0, 1.0);
-	if (d > 0.6) {
-		d = 2.5 * (1.0 - d);
-	}
-	else if (d > 0.4) {
-		d = 1.0;
-	}
-	else {
-		d *= 2.5;
-	}
-	return d;
-}
 
 PixelShaderOutput main(VertexShaderOutput input) {
 	PixelShaderOutput output;
@@ -64,10 +37,7 @@ PixelShaderOutput main(VertexShaderOutput input) {
 	}
 
 	//線形深度
-	output.linerDepth = float32_t4(input.linerDepth.x, 0.0f, 0.0f, 1.0f);
-
-	//dof深度
-	output.dofDepth = input.dofDepth;
+	output.depth = float32_t4(input.depth.x, 0.0f, 0.0f, 1.0f);
 
 	return output;
 }

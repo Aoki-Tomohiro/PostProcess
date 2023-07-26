@@ -254,11 +254,6 @@ void DirectXCommon::PreDraw() {
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	//TransitionBarrierを張る
 	commandList_->ResourceBarrier(1, &barrier);
-	barrier.Transition.pResource = depthStencilResource_.Get();
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	//TransitionBarrierを張る
-	commandList_->ResourceBarrier(1, &barrier);
 	//RTV用ディスクリプタヒープのハンドルを取得
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2];
 	rtvHandles[0] = GetCPUDescriptorHandle(rtvDescriptorHeap_, descriptorSizeRTV, 0);
@@ -286,11 +281,6 @@ void DirectXCommon::PostDraw() {
 	barrier.Transition.pResource = swapChainResources_[backBufferIndex].Get();
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-	//TransitionBarrierを張る
-	commandList_->ResourceBarrier(1, &barrier);
-	barrier.Transition.pResource = depthStencilResource_.Get();
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 	//TransitionBarrierを張る
 	commandList_->ResourceBarrier(1, &barrier);
 	//コマンドリストの内容を確定させる。すべてのコマンドを積んでからCloseすること
@@ -500,16 +490,9 @@ void DirectXCommon::CreateFirstPassResource() {
 	clearValue.Color[1] = 0.0f;
 	clearValue.Color[2] = 0.0f;
 	clearValue.Color[3] = 1.0f;
-
 	hr = device_->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE,
 		&resourceDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
 		IID_PPV_ARGS(&depthResource_));
-	assert(SUCCEEDED(hr));
-
-	//dof深度
-	hr = device_->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE,
-		&resourceDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue,
-		IID_PPV_ARGS(&dofDepthResource_));
 	assert(SUCCEEDED(hr));
 }
 
@@ -540,10 +523,6 @@ void DirectXCommon::CreateMultiPassRTV() {
 	//線形深度RTVの作成
 	rtvHandle = GetCPUDescriptorHandle(multiPassRTVDescriptorHeap_, descriptorSizeRTV, 5);
 	device_->CreateRenderTargetView(depthResource_.Get(), &rtvDesc, rtvHandle);
-
-	//dof深度RTVの作成
-	rtvHandle = GetCPUDescriptorHandle(multiPassRTVDescriptorHeap_, descriptorSizeRTV, 6);
-	device_->CreateRenderTargetView(dofDepthResource_.Get(), &rtvDesc, rtvHandle);
 }
 
 void DirectXCommon::CreateMultiPassSRV() {
@@ -573,23 +552,13 @@ void DirectXCommon::CreateMultiPassSRV() {
 	//線形深度SRVの作成
 	srvCPUHandle_ = GetCPUDescriptorHandle(srvDescriptorHeap_, descriptorSizeSRV, 8);
 	device_->CreateShaderResourceView(depthResource_.Get(), &srvDesc, srvCPUHandle_);
-
-	//dof深度SRVの作成
-	srvCPUHandle_ = GetCPUDescriptorHandle(srvDescriptorHeap_, descriptorSizeSRV, 9);
-	device_->CreateShaderResourceView(dofDepthResource_.Get(), &srvDesc, srvCPUHandle_);
-
-	//深度SRVの作成
-	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-	srvCPUHandle_ = GetCPUDescriptorHandle(srvDescriptorHeap_, descriptorSizeSRV, 10);
-	device_->CreateShaderResourceView(depthStencilResource_.Get(), &srvDesc, srvCPUHandle_);
 }
 
 void DirectXCommon::FirstPassPreDraw() {
 	//描画先のRTVとDSVのハンドル取得する
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[3];
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2];
 	rtvHandles[0]  = GetCPUDescriptorHandle(multiPassRTVDescriptorHeap_, descriptorSizeRTV, 0);
 	rtvHandles[1] = GetCPUDescriptorHandle(multiPassRTVDescriptorHeap_, descriptorSizeRTV, 5);
-	rtvHandles[2] = GetCPUDescriptorHandle(multiPassRTVDescriptorHeap_, descriptorSizeRTV, 6);
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = GetCPUDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV, 0);
 	//barirerを張る
 	D3D12_RESOURCE_BARRIER barrier{};
@@ -605,20 +574,14 @@ void DirectXCommon::FirstPassPreDraw() {
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	commandList_->ResourceBarrier(1, &barrier);
-	//dof深度のリソース
-	barrier.Transition.pResource = dofDepthResource_.Get();
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	commandList_->ResourceBarrier(1, &barrier);
 	//描画先のRTVとDSVを設定する
-	commandList_->OMSetRenderTargets(3, rtvHandles, false, &dsvHandle);
+	commandList_->OMSetRenderTargets(2, rtvHandles, false, &dsvHandle);
 	commandList_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	//指定した色で画面をクリア
 	float clearColor[] = { 0.1f,0.25f,0.5f,1.0f };
 	commandList_->ClearRenderTargetView(rtvHandles[0], clearColor, 0, nullptr);
 	float depthClearColor[] = { 0.0f,0.0f,0.0f,1.0f };
 	commandList_->ClearRenderTargetView(rtvHandles[1], depthClearColor, 0, nullptr);
-	commandList_->ClearRenderTargetView(rtvHandles[2], depthClearColor, 0, nullptr);
 	//ディスクリプタヒープを設定する
 	ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap_.Get() };
 	commandList_->SetDescriptorHeaps(1, descriptorHeaps);
@@ -635,11 +598,6 @@ void DirectXCommon::FirstPassPostDraw() {
 	commandList_->ResourceBarrier(1, &barrier);
 	//線形深度のリソース
 	barrier.Transition.pResource = depthResource_.Get();
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	commandList_->ResourceBarrier(1, &barrier);
-	//dof深度のリソース
-	barrier.Transition.pResource = dofDepthResource_.Get();
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	commandList_->ResourceBarrier(1, &barrier);

@@ -27,10 +27,10 @@ public:
 	MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename);
 	void CreateViewport();
 	void CreateScissorRect();
-	void Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, D3D12_INDEX_BUFFER_VIEW* indexBufferViewSprite, uint32_t textureIndex);
+	void Draw(D3D12_VERTEX_BUFFER_VIEW* vertexBufferView, UINT vertexCount, const Microsoft::WRL::ComPtr<ID3D12Resource>& materialResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& WVPResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lightingResource, D3D12_INDEX_BUFFER_VIEW* indexBufferViewSprite, uint32_t textureIndex, const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource);
 	//マルチパスレンダリング
 	void CreateSecondPassPipelineStateObject();
-	void SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource);
+	void SecondPassDraw(const Microsoft::WRL::ComPtr<ID3D12Resource>& fogResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& dofResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& lensDistortionResource, const Microsoft::WRL::ComPtr<ID3D12Resource>& vignetteResource);
 	void CreateBlurPipelineStateObject();
 	void HorizontalBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource);
 	void VerticalBlur(const Microsoft::WRL::ComPtr<ID3D12Resource> bkResource);

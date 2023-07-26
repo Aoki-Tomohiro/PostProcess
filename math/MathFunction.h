@@ -69,10 +69,26 @@ struct ModelData {
 };
 
 struct FogParameter {
-	float nearClip;
-	float farClip;
+	bool enable;
+	float start;
+	float end;
 	float scale;
 	float attenuationRate;
+};
+
+struct DofParameter {
+	bool enable;
+};
+
+struct LensDistortionParameter {
+	bool enable;
+	float tightness;
+	float strength;
+};
+
+struct VignetteParameter {
+	bool enable;
+	float intensity;
 };
 
 Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2);

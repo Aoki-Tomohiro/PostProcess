@@ -98,5 +98,4 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12Resource> blurResource_[2];
 	Microsoft::WRL::ComPtr<ID3D12Resource> shrinkBlurResource_[2];
 	Microsoft::WRL::ComPtr<ID3D12Resource> depthResource_ = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> dofDepthResource_ = nullptr;
 };	

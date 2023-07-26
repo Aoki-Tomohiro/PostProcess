@@ -104,7 +104,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 	*directionalLight = lightingData;
 
 	//Textureを読んで転送する
-	DirectX::ScratchImage mipImages = directX->LoadTexture("resource/uvChecker.png");
+	DirectX::ScratchImage mipImages = directX->LoadTexture("resource/monsterBall.png");
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource_ = directX->CreateTextureResource(directX->GetDevice(), metadata);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource_ = directX->UploadTextureData(textureResource_, mipImages, directX->GetDevice(), directX->GetCommandList());
@@ -118,14 +118,25 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 
 	//Fog
 	Microsoft::WRL::ComPtr<ID3D12Resource> fogResource = model->CreateBufferResource(directX->GetDevice(), sizeof(FogParameter));
-	FogParameter fogParameter = { 0.1f,30.0f,0.5f,0.5f };
+	FogParameter fogParameter = { false,0.1f,30.0f, 0.5f,1.0f };
+
+	//DoF
+	Microsoft::WRL::ComPtr<ID3D12Resource> dofResource = model->CreateBufferResource(directX->GetDevice(), sizeof(FogParameter));
+	DofParameter dofParameter = { false };
+
+	//LensDistortion
+	Microsoft::WRL::ComPtr<ID3D12Resource> lensDistortionResource = model->CreateBufferResource(directX->GetDevice(), sizeof(LensDistortionParameter));
+	LensDistortionParameter lensDistortionParameter = { false,2.5f,-0.1f };
+
+	//Vignette
+	Microsoft::WRL::ComPtr<ID3D12Resource> vignetteResource = model->CreateBufferResource(directX->GetDevice(), sizeof(VignetteParameter));
+	VignetteParameter vignetteParameter = { false,1.0f };
 
 	//ぼかし
 	Microsoft::WRL::ComPtr<ID3D12Resource> blurResource = model->CreateBufferResource(directX->GetDevice(), sizeof(Weights));
 	Weights* mappedWeight = nullptr;
 	float s = 5.0f;
-	blurResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedWeight));
-	*mappedWeight = GaussianWeights(s);
+
 
 	//ImGuiの初期化
 	IMGUI_CHECKVERSION();
@@ -173,42 +184,66 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 		materialData->uvTransform = uvTransformMatrix;
 		model->UpdateMaterialData(materialResource, materialData);
 
-		//lighting
-		lightingResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLight));
-		*directionalLight = lightingData;
-
-		//FogParameter
-		FogParameter* fog = nullptr;
-		fogResource->Map(0, nullptr, reinterpret_cast<void**>(&fog));
-		*fog = fogParameter;
-
 		//ぼかし
 		blurResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedWeight));
 		*mappedWeight = GaussianWeights(s);
 
+		//FogParameter
+		FogParameter* fog = nullptr;
+		fogResource->Map(0, nullptr, reinterpret_cast<void**>(&fog));
+		fog->enable = fogParameter.enable;
+		fog->start = fogParameter.start;
+		fog->end = fogParameter.end;
+		fog->scale = fogParameter.scale;
+		fog->attenuationRate = fogParameter.attenuationRate;
+
+		//DofParameter
+		DofParameter* dof = nullptr;
+		dofResource->Map(0, nullptr, reinterpret_cast<void**>(&dof));
+		dof->enable = dofParameter.enable;
+
+		//LensDistortion
+		LensDistortionParameter* lensDistortion = nullptr;
+		lensDistortionResource->Map(0, nullptr, reinterpret_cast<void**>(&lensDistortion));
+		lensDistortion->enable = lensDistortionParameter.enable;
+		lensDistortion->tightness = lensDistortionParameter.tightness;
+		lensDistortion->strength = lensDistortionParameter.strength;
+
+		//Vignette
+		VignetteParameter* vignette = nullptr;
+		vignetteResource->Map(0, nullptr, reinterpret_cast<void**>(&vignette));
+		vignette->enable = vignetteParameter.enable;
+		vignette->intensity = vignetteParameter.intensity;
+
+
 		ImGui::Begin("Window");
-		ImGui::DragFloat3("Camera:scale", &cameraTransform.scale.x, 0.01f);
-		ImGui::DragFloat3("Camera:rotate", &cameraTransform.rotate.x, 0.01f);
-		ImGui::DragFloat3("Camera:translate", &cameraTransform.translate.x, 0.01f);
 		ImGui::DragFloat3("plane1:scale", &transform.scale.x, 0.01f);
 		ImGui::DragFloat3("plane1:rotate", &transform.rotate.x, 0.01f);
 		ImGui::DragFloat3("plane1:translate", &transform.translate.x, 0.01f);
 		ImGui::DragFloat3("plane2:scale", &transform2.scale.x, 0.01f);
 		ImGui::DragFloat3("plane2:rotate", &transform2.rotate.x, 0.01f);
 		ImGui::DragFloat3("plane2:translate", &transform2.translate.x, 0.01f);
-		ImGui::DragFloat("fog:nearClip", &fogParameter.nearClip, 0.01f);
-		ImGui::DragFloat("fog:farClip", &fogParameter.farClip, 0.01f);
+		ImGui::DragFloat("weight:s", &s, 0.01f);
+		ImGui::Checkbox("fog:enable", &fogParameter.enable);
+		ImGui::DragFloat("fog:start", &fogParameter.start, 0.01f);
+		ImGui::DragFloat("fog:end", &fogParameter.end, 0.01f);
 		ImGui::DragFloat("fog:scale", &fogParameter.scale, 0.01f);
 		ImGui::DragFloat("fog:attenuationRate", &fogParameter.attenuationRate, 0.01f);
+		ImGui::Checkbox("dof:enable", &dofParameter.enable);
+		ImGui::Checkbox("lensDistortion:enable", &lensDistortionParameter.enable);
+		ImGui::DragFloat("lensDistortion:tightness", &lensDistortionParameter.tightness, 0.01f);
+		ImGui::DragFloat("lensDistortion:strength", &lensDistortionParameter.strength, 0.01f, -0.1f, 0.1f);
+		ImGui::Checkbox("vignette:enable", &vignetteParameter.enable);
+		ImGui::DragFloat("vignette:intensity", &vignetteParameter.intensity, 0.01f);
 		ImGui::End();
 
 		//描画始まり
 		ImGui::Render();
 		//一パス目
 		directX->FirstPassPreDraw();
-		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData, lightingResource, nullptr,1);
-		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData2, lightingResource, nullptr,1);
-		model->Draw(&vertexBufferView2, UINT(modelData2.vertices.size()), materialResource, transformationMatrixData3, lightingResource, nullptr, 2);
+		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData, lightingResource, nullptr,1, fogResource);
+		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData2, lightingResource, nullptr,1, fogResource);
+		model->Draw(&vertexBufferView2, UINT(modelData2.vertices.size()), materialResource, transformationMatrixData3, lightingResource, nullptr, 2, fogResource);
 		directX->FirstPassPostDraw();
 
 		//横ぼかし
@@ -231,7 +266,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 
 		//最終レンダリング
 		directX->PreDraw();
-		model->SecondPassDraw(fogResource);
+		model->SecondPassDraw(fogResource, dofResource, lensDistortionResource, vignetteResource);
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), directX->GetCommandList().Get());
 		directX->PostDraw();
 	}
