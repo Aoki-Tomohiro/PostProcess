@@ -46,42 +46,134 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 	Model* model = new Model;
 	model->Initialize(directX);
 
-	//モデル読み込み
-	ModelData modelData = model->LoadObjFile("resource", "plane.obj");
-	//頂点リソースを作る
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = model->CreateBufferResource(directX->GetDevice(), sizeof(VertexData) * modelData.vertices.size());
-	//頂点バッファビューを作成する
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
-	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();//リソースの先頭のアドレスから使う
-	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());//使用するリソースのサイズは頂点のサイズ
-	vertexBufferView.StrideInBytes = sizeof(VertexData);
-	//頂点リソースにデータを書き込む
-	VertexData* vertexData = nullptr;
-	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));//書き込むためのアドレスを取得
-	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData)* modelData.vertices.size());
+	//頂点データ
+	Microsoft::WRL::ComPtr<ID3D12Resource> sphereVertexResource = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW sphereVertexBufferView{};
+	VertexData sphereVertexData[1536];
+	const float pi = 3.14f;
+	const uint32_t kSubdivision = 16;
+	uint32_t latIndex = 0;
+	uint32_t lonIndex = 0;
+	//経度分割一つ分の角度φd
+	const float kLonEvery = pi * 2.0f / float(kSubdivision);
+	//緯度分割一つ分の角度θd
+	const float kLatEvery = pi / float(kSubdivision);
+	//緯度の方向に分割
+	for (latIndex = 0; latIndex < kSubdivision; ++latIndex) {
+		float lat = -pi / 2.0f + kLatEvery * latIndex;//θ
+		//経度の方向に分割しながら線を描く
+		for (lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+			uint32_t start = (latIndex * kSubdivision + lonIndex) * 6;
+			float lon = lonIndex * kLonEvery;//φ
+			//頂点にデータを入力する。基準点a
+			sphereVertexData[start].position.x = std::cos(lat) * std::cos(lon);
+			sphereVertexData[start].position.y = std::sin(lat);
+			sphereVertexData[start].position.z = std::cos(lat) * std::sin(lon);
+			sphereVertexData[start].position.w = 1.0f;
+			sphereVertexData[start].texcoord.x = float(lonIndex) / float(kSubdivision);
+			sphereVertexData[start].texcoord.y = 1.0f - float(latIndex) / float(kSubdivision);
+			sphereVertexData[start].normal.x = sphereVertexData[start].position.x;
+			sphereVertexData[start].normal.y = sphereVertexData[start].position.y;
+			sphereVertexData[start].normal.z = sphereVertexData[start].position.z;
+			//残りの５頂点も順番に計算して入力していく
+			sphereVertexData[start + 1].position.x = std::cos(lat + kLatEvery) * std::cos(lon);
+			sphereVertexData[start + 1].position.y = std::sin(lat + kLatEvery);
+			sphereVertexData[start + 1].position.z = std::cos(lat + kLatEvery) * std::sin(lon);
+			sphereVertexData[start + 1].position.w = 1.0f;
+			sphereVertexData[start + 1].texcoord.x = float(lonIndex) / float(kSubdivision);
+			sphereVertexData[start + 1].texcoord.y = 1.0f - float(latIndex + 1) / float(kSubdivision);
+			sphereVertexData[start + 1].normal.x = sphereVertexData[start + 1].position.x;
+			sphereVertexData[start + 1].normal.y = sphereVertexData[start + 1].position.y;
+			sphereVertexData[start + 1].normal.z = sphereVertexData[start + 1].position.z;
+			sphereVertexData[start + 2].position.x = std::cos(lat) * std::cos(lon + kLonEvery);
+			sphereVertexData[start + 2].position.y = std::sin(lat);
+			sphereVertexData[start + 2].position.z = std::cos(lat) * std::sin(lon + kLonEvery);
+			sphereVertexData[start + 2].position.w = 1.0f;
+			sphereVertexData[start + 2].texcoord.x = float(lonIndex + 1) / float(kSubdivision);
+			sphereVertexData[start + 2].texcoord.y = 1.0f - float(latIndex) / float(kSubdivision);
+			sphereVertexData[start + 2].normal.x = sphereVertexData[start + 2].position.x;
+			sphereVertexData[start + 2].normal.y = sphereVertexData[start + 2].position.y;
+			sphereVertexData[start + 2].normal.z = sphereVertexData[start + 2].position.z;
+			sphereVertexData[start + 3].position.x = std::cos(lat) * std::cos(lon + kLonEvery);
+			sphereVertexData[start + 3].position.y = std::sin(lat);
+			sphereVertexData[start + 3].position.z = std::cos(lat) * std::sin(lon + kLonEvery);
+			sphereVertexData[start + 3].position.w = 1.0f;
+			sphereVertexData[start + 3].texcoord.x = float(lonIndex + 1) / float(kSubdivision);
+			sphereVertexData[start + 3].texcoord.y = 1.0f - float(latIndex) / float(kSubdivision);
+			sphereVertexData[start + 3].normal.x = sphereVertexData[start + 3].position.x;
+			sphereVertexData[start + 3].normal.y = sphereVertexData[start + 3].position.y;
+			sphereVertexData[start + 3].normal.z = sphereVertexData[start + 3].position.z;
+			sphereVertexData[start + 4].position.x = std::cos(lat + kLatEvery) * std::cos(lon);
+			sphereVertexData[start + 4].position.y = std::sin(lat + kLatEvery);
+			sphereVertexData[start + 4].position.z = std::cos(lat + kLatEvery) * std::sin(lon);
+			sphereVertexData[start + 4].position.w = 1.0f;
+			sphereVertexData[start + 4].texcoord.x = float(lonIndex) / float(kSubdivision);
+			sphereVertexData[start + 4].texcoord.y = 1.0f - float(latIndex + 1) / float(kSubdivision);
+			sphereVertexData[start + 4].normal.x = sphereVertexData[start + 4].position.x;
+			sphereVertexData[start + 4].normal.y = sphereVertexData[start + 4].position.y;
+			sphereVertexData[start + 4].normal.z = sphereVertexData[start + 4].position.z;
+			sphereVertexData[start + 5].position.x = std::cos(lat + kLatEvery) * std::cos(lon + kLonEvery);
+			sphereVertexData[start + 5].position.y = std::sin(lat + kLatEvery);
+			sphereVertexData[start + 5].position.z = std::cos(lat + kLatEvery) * std::sin(lon + kLonEvery);
+			sphereVertexData[start + 5].position.w = 1.0f;
+			sphereVertexData[start + 5].texcoord.x = float(lonIndex + 1) / float(kSubdivision);
+			sphereVertexData[start + 5].texcoord.y = 1.0f - float(latIndex + 1) / float(kSubdivision);
+			sphereVertexData[start + 5].normal.x = sphereVertexData[start + 5].position.x;
+			sphereVertexData[start + 5].normal.y = sphereVertexData[start + 5].position.y;
+			sphereVertexData[start + 5].normal.z = sphereVertexData[start + 5].position.z;
+		}
+	}
+	sphereVertexResource = model->CreateVertexResource(sphereVertexBufferView, sizeof(sphereVertexData), sphereVertexData, 1536);
+
 
 	//モデル読み込み
-	ModelData modelData2 = model->LoadObjFile("resource/skydome", "skydome.obj");
+	ModelData modelDataSkydome = model->LoadObjFile("resource/skydome", "skydome.obj");
 	//頂点リソースを作る
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource2 = model->CreateBufferResource(directX->GetDevice(), sizeof(VertexData) * modelData2.vertices.size());
+	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSkydome = model->CreateBufferResource(directX->GetDevice(), sizeof(VertexData) * modelDataSkydome.vertices.size());
 	//頂点バッファビューを作成する
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView2{};
-	vertexBufferView2.BufferLocation = vertexResource2->GetGPUVirtualAddress();//リソースの先頭のアドレスから使う
-	vertexBufferView2.SizeInBytes = UINT(sizeof(VertexData) * modelData2.vertices.size());//使用するリソースのサイズは頂点のサイズ
-	vertexBufferView2.StrideInBytes = sizeof(VertexData);
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSkydome{};
+	vertexBufferViewSkydome.BufferLocation = vertexResourceSkydome->GetGPUVirtualAddress();//リソースの先頭のアドレスから使う
+	vertexBufferViewSkydome.SizeInBytes = UINT(sizeof(VertexData) * modelDataSkydome.vertices.size());//使用するリソースのサイズは頂点のサイズ
+	vertexBufferViewSkydome.StrideInBytes = sizeof(VertexData);
 	//頂点リソースにデータを書き込む
-	VertexData* vertexData2 = nullptr;
-	vertexResource2->Map(0, nullptr, reinterpret_cast<void**>(&vertexData2));//書き込むためのアドレスを取得
-	std::memcpy(vertexData2, modelData2.vertices.data(), sizeof(VertexData) * modelData2.vertices.size());
+	VertexData* vertexDataSkydome = nullptr;
+	vertexResourceSkydome->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSkydome));//書き込むためのアドレスを取得
+	std::memcpy(vertexDataSkydome, modelDataSkydome.vertices.data(), sizeof(VertexData)* modelDataSkydome.vertices.size());
+
+	ModelData modelDataSphere = model->LoadObjFile("resource/monsterBall", "monsterBall.obj");
+	//頂点リソースを作る
+	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSphere = model->CreateBufferResource(directX->GetDevice(), sizeof(VertexData) * modelDataSphere.vertices.size());
+	//頂点バッファビューを作成する
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSphere{};
+	vertexBufferViewSphere.BufferLocation = vertexResourceSphere->GetGPUVirtualAddress();//リソースの先頭のアドレスから使う
+	vertexBufferViewSphere.SizeInBytes = UINT(sizeof(VertexData) * modelDataSphere.vertices.size());//使用するリソースのサイズは頂点のサイズ
+	vertexBufferViewSphere.StrideInBytes = sizeof(VertexData);
+	//頂点リソースにデータを書き込む
+	VertexData* vertexDataSphere = nullptr;
+	vertexResourceSphere->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSphere));//書き込むためのアドレスを取得
+	std::memcpy(vertexDataSphere, modelDataSphere.vertices.data(), sizeof(VertexData) * modelDataSphere.vertices.size());
+
 
 	//マテリアルデータ
-	Microsoft::WRL::ComPtr<ID3D12Resource> materialResource = nullptr;
-	Material* materialData = new Material;
-	materialData->color = { 1.0f,1.0f,1.0f,1.0f };
-	materialData->enableLighting = false;
-	materialData->uvTransform = MakeIdentity4x4();
-	materialResource = model->CreateMaterialData(materialData);
-	Transform uvTransform{
+	Microsoft::WRL::ComPtr<ID3D12Resource> materialResourceSkydome = nullptr;
+	Material* materialDataSkydome = new Material;
+	materialDataSkydome->color = { 1.0f,1.0f,1.0f,1.0f };
+	materialDataSkydome->enableLighting = false;
+	materialDataSkydome->uvTransform = MakeIdentity4x4();
+	materialResourceSkydome = model->CreateMaterialData(materialDataSkydome);
+	Transform uvTransformSkydome{
+		{1.0f,1.0f,1.0f},
+		{0.0f,0.0f,0.0f},
+		{0.0f,0.0f,0.0f},
+	};
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> materialResourceSphere = nullptr;
+	Material* materialDataSphere = new Material;
+	materialDataSphere->color = { 1.0f,1.0f,1.0f,1.0f };
+	materialDataSphere->enableLighting = true;
+	materialDataSphere->uvTransform = MakeIdentity4x4();
+	materialResourceSphere = model->CreateMaterialData(materialDataSphere);
+	Transform uvTransformSphere{
 		{1.0f,1.0f,1.0f},
 		{0.0f,0.0f,0.0f},
 		{0.0f,0.0f,0.0f},
@@ -89,12 +181,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 
 	//WVP用リソース
 	Transform cameraTransform = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,0.0f,-10.0f} };
-	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
-	Transform transform = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{-1.5f,0.0f,5.0f} };
-	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData2 = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
-	Transform transform2 = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{1.5f,0.0f,0.0f} };
-	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixData3 = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
-	Transform transform3 = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,-10.0f,50.0f} };
+	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixDataSphere1 = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
+	Transform transformSphere1 = { {1.0f,1.0f,1.0f},{0.0f,-1.5f,0.0f},{-1.5f,0.0f,5.0f}};
+	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixDataSphere2 = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
+	Transform transformSphere2 = { {1.0f,1.0f,1.0f},{0.0f,-1.5f,0.0f},{1.5f,0.0f,0.0f} };
+	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixDataSkydome = model->CreateBufferResource(directX->GetDevice(), sizeof(TransformationMatrix));
+	Transform transformSkydome = { {1.0f,1.0f,1.0f},{0.0f,0.0f,0.0f},{0.0f,-10.0f,50.0f} };
 
 	//Lighting
 	Microsoft::WRL::ComPtr<ID3D12Resource> lightingResource = model->CreateBufferResource(directX->GetDevice(), sizeof(DirectionalLight));
@@ -104,13 +196,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 	*directionalLight = lightingData;
 
 	//Textureを読んで転送する
-	DirectX::ScratchImage mipImages = directX->LoadTexture("resource/monsterBall.png");
+	DirectX::ScratchImage mipImages = directX->LoadTexture(modelDataSkydome.material.textureFilePath);
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource_ = directX->CreateTextureResource(directX->GetDevice(), metadata);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource_ = directX->UploadTextureData(textureResource_, mipImages, directX->GetDevice(), directX->GetCommandList());
 	directX->CreateShaderResourceView(textureResource_,metadata, 1);
 	//2枚目のテクスチャを読んで転送する
-	DirectX::ScratchImage mipImages2 = directX->LoadTexture(modelData2.material.textureFilePath);
+	DirectX::ScratchImage mipImages2 = directX->LoadTexture(modelDataSphere.material.textureFilePath);
 	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2_ = directX->CreateTextureResource(directX->GetDevice(), metadata2);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2_ = directX->UploadTextureData(textureResource2_, mipImages2, directX->GetDevice(), directX->GetCommandList());
@@ -165,24 +257,33 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(45.0f * 3.141592654f / 180.0f, float(winApp->kClientWidth) / float(winApp->kClientHeight), 0.1f, 100.0f);
 
-		Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
-		TransformationMatrix worldViewProjectionMatrix = { Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix)),worldMatrix };
-		model->UpdateMatrix(transformationMatrixData, worldViewProjectionMatrix);
+		//sphere1
+		Matrix4x4 worldMatrixSphere1 = MakeAffineMatrix(transformSphere1.scale, transformSphere1.rotate, transformSphere1.translate);
+		TransformationMatrix worldViewProjectionMatrixSphere1 = { Multiply(worldMatrixSphere1, Multiply(viewMatrix, projectionMatrix)),worldMatrixSphere1 };
+		model->UpdateMatrix(transformationMatrixDataSphere1, worldViewProjectionMatrixSphere1);
 
-		Matrix4x4 worldMatrix2 = MakeAffineMatrix(transform2.scale, transform2.rotate, transform2.translate);
-		TransformationMatrix worldViewProjectionMatrix2 = { Multiply(worldMatrix2, Multiply(viewMatrix, projectionMatrix)),worldMatrix2 };
-		model->UpdateMatrix(transformationMatrixData2, worldViewProjectionMatrix2);
+		//sphere2
+		Matrix4x4 worldMatrixSphere2 = MakeAffineMatrix(transformSphere2.scale, transformSphere2.rotate, transformSphere2.translate);
+		TransformationMatrix worldViewProjectionMatrixSphere2 = { Multiply(worldMatrixSphere2, Multiply(viewMatrix, projectionMatrix)),worldMatrixSphere2 };
+		model->UpdateMatrix(transformationMatrixDataSphere2, worldViewProjectionMatrixSphere2);
 
-		Matrix4x4 worldMatrix3 = MakeAffineMatrix(transform3.scale, transform3.rotate, transform3.translate);
-		TransformationMatrix worldViewProjectionMatrix3 = { Multiply(worldMatrix3, Multiply(viewMatrix, projectionMatrix)),worldMatrix3 };
-		model->UpdateMatrix(transformationMatrixData3, worldViewProjectionMatrix3);
+		//天球
+		Matrix4x4 worldMatrixSkydome = MakeAffineMatrix(transformSkydome.scale, transformSkydome.rotate, transformSkydome.translate);
+		TransformationMatrix worldViewProjectionMatrixSkydome = { Multiply(worldMatrixSkydome, Multiply(viewMatrix, projectionMatrix)),worldMatrixSkydome };
+		model->UpdateMatrix(transformationMatrixDataSkydome, worldViewProjectionMatrixSkydome);
 
 		//uvTransform
-		Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransform.scale);
-		uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransform.rotate.z));
-		uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransform.translate));
-		materialData->uvTransform = uvTransformMatrix;
-		model->UpdateMaterialData(materialResource, materialData);
+		Matrix4x4 uvTransformMatrixSkydome = MakeScaleMatrix(uvTransformSkydome.scale);
+		uvTransformMatrixSkydome = Multiply(uvTransformMatrixSkydome, MakeRotateZMatrix(uvTransformSkydome.rotate.z));
+		uvTransformMatrixSkydome = Multiply(uvTransformMatrixSkydome, MakeTranslateMatrix(uvTransformSkydome.translate));
+		materialDataSkydome->uvTransform = uvTransformMatrixSkydome;
+		model->UpdateMaterialData(materialResourceSkydome, materialDataSkydome);
+
+		Matrix4x4 uvTransformMatrixSphere = MakeScaleMatrix(uvTransformSphere.scale);
+		uvTransformMatrixSphere = Multiply(uvTransformMatrixSphere, MakeRotateZMatrix(uvTransformSphere.rotate.z));
+		uvTransformMatrixSphere = Multiply(uvTransformMatrixSphere, MakeTranslateMatrix(uvTransformSphere.translate));
+		materialDataSphere->uvTransform = uvTransformMatrixSphere;
+		model->UpdateMaterialData(materialResourceSphere, materialDataSphere);
 
 		//ぼかし
 		blurResource->Map(0, nullptr, reinterpret_cast<void**>(&mappedWeight));
@@ -216,13 +317,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 		vignette->intensity = vignetteParameter.intensity;
 
 
-		ImGui::Begin("Window");
-		ImGui::DragFloat3("plane1:scale", &transform.scale.x, 0.01f);
-		ImGui::DragFloat3("plane1:rotate", &transform.rotate.x, 0.01f);
-		ImGui::DragFloat3("plane1:translate", &transform.translate.x, 0.01f);
-		ImGui::DragFloat3("plane2:scale", &transform2.scale.x, 0.01f);
-		ImGui::DragFloat3("plane2:rotate", &transform2.rotate.x, 0.01f);
-		ImGui::DragFloat3("plane2:translate", &transform2.translate.x, 0.01f);
+		ImGui::Begin(" ");
+		ImGui::DragFloat3("Sphere1:translate", &transformSphere1.translate.x, 0.01f);
+		ImGui::DragFloat3("Sphere2:translate", &transformSphere2.translate.x, 0.01f);
 		ImGui::DragFloat("weight:s", &s, 0.01f);
 		ImGui::Checkbox("fog:enable", &fogParameter.enable);
 		ImGui::DragFloat("fog:start", &fogParameter.start, 0.01f);
@@ -241,9 +338,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, 
 		ImGui::Render();
 		//一パス目
 		directX->FirstPassPreDraw();
-		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData, lightingResource, nullptr,1, fogResource);
-		model->Draw(&vertexBufferView, UINT(modelData.vertices.size()), materialResource, transformationMatrixData2, lightingResource, nullptr,1, fogResource);
-		model->Draw(&vertexBufferView2, UINT(modelData2.vertices.size()), materialResource, transformationMatrixData3, lightingResource, nullptr, 2, fogResource);
+		model->Draw(&sphereVertexBufferView, 1536, materialResourceSphere, transformationMatrixDataSphere1, lightingResource, nullptr,2, fogResource);
+		model->Draw(&sphereVertexBufferView, 1536, materialResourceSphere, transformationMatrixDataSphere2, lightingResource, nullptr,2, fogResource);
+		model->Draw(&vertexBufferViewSkydome, UINT(modelDataSkydome.vertices.size()), materialResourceSkydome, transformationMatrixDataSkydome, lightingResource, nullptr, 1, fogResource);
 		directX->FirstPassPostDraw();
 
 		//横ぼかし

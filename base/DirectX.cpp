@@ -254,6 +254,14 @@ void DirectXCommon::PreDraw() {
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	//TransitionBarrierを張る
 	commandList_->ResourceBarrier(1, &barrier);
+	//バリアを張る対象のリソース。現在のバックバッファに対して行う
+	barrier.Transition.pResource = depthStencilResource_.Get();
+	//遷移前(現在)のResourceState
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+	///遷移後のResourceState
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	//TransitionBarrierを張る
+	commandList_->ResourceBarrier(1, &barrier);
 	//RTV用ディスクリプタヒープのハンドルを取得
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2];
 	rtvHandles[0] = GetCPUDescriptorHandle(rtvDescriptorHeap_, descriptorSizeRTV, 0);
@@ -281,6 +289,12 @@ void DirectXCommon::PostDraw() {
 	barrier.Transition.pResource = swapChainResources_[backBufferIndex].Get();
 	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+	//TransitionBarrierを張る
+	commandList_->ResourceBarrier(1, &barrier);
+	//バリアを張る対象のリソース。現在のバックバッファに対して行う
+	barrier.Transition.pResource = depthStencilResource_.Get();
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 	//TransitionBarrierを張る
 	commandList_->ResourceBarrier(1, &barrier);
 	//コマンドリストの内容を確定させる。すべてのコマンドを積んでからCloseすること
@@ -552,6 +566,11 @@ void DirectXCommon::CreateMultiPassSRV() {
 	//線形深度SRVの作成
 	srvCPUHandle_ = GetCPUDescriptorHandle(srvDescriptorHeap_, descriptorSizeSRV, 8);
 	device_->CreateShaderResourceView(depthResource_.Get(), &srvDesc, srvCPUHandle_);
+
+	//深度バッファSRVの作成
+	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	srvCPUHandle_ = GetCPUDescriptorHandle(srvDescriptorHeap_, descriptorSizeSRV, 9);
+	device_->CreateShaderResourceView(depthStencilResource_.Get(), &srvDesc, srvCPUHandle_);
 }
 
 void DirectXCommon::FirstPassPreDraw() {

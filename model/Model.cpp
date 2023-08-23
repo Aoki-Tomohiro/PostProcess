@@ -472,7 +472,7 @@ void Model::CreateSecondPassPipelineStateObject() {
 	descriptorRange[1].NumDescriptors = 1;
 	descriptorRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	descriptorRange[2].BaseShaderRegister = 2;
-	descriptorRange[2].NumDescriptors = 2;
+	descriptorRange[2].NumDescriptors = 3;
 
 	//RootParameter作成。複数設定できるので配列。今回は結果一つだけなので長さ１の配列
 	D3D12_ROOT_PARAMETER rootParameters[7] = {};

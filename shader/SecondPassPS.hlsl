@@ -26,7 +26,8 @@ struct Vignette {
 Texture2D<float32_t4> gTexture : register(t0);
 Texture2D<float32_t4> gBlurTexture : register(t1);
 Texture2D<float32_t4> gShrinkBlurTexture : register(t2);
-Texture2D<float32_t4> gDepthTexture : register(t3);
+Texture2D<float32_t4> gLinearDepthTexture : register(t3);
+Texture2D<float32_t> gDepthTexture : register(t4);
 SamplerState gSampler : register(s0);
 ConstantBuffer<Fog> gFogParameter : register(b0);
 ConstantBuffer<DoF> gDofParameter : register(b1);
@@ -42,27 +43,30 @@ PixelShaderOutput main(VertexShaderOutput input) {
 	float32_t4 textureColor = gTexture.Sample(gSampler, input.texcoord);
 	float32_t4 blurColor = gBlurTexture.Sample(gSampler, input.texcoord);
 	float32_t4 shrinkBlurColor = gShrinkBlurTexture.Sample(gSampler, input.texcoord);
-	float32_t depthColor = gDepthTexture.Sample(gSampler, input.texcoord).r;
+	float32_t linearDepthColor = gLinearDepthTexture.Sample(gSampler, input.texcoord).r;
+	float32_t depthColor = gDepthTexture.Sample(gSampler, input.texcoord);
 
 	//レンズディストーション
 	if (gLensDistortionParameter.enable == true) {
 		const float2 uvNormalized = input.texcoord * 2 - 1;
 		const float distortionMagnitude = abs(uvNormalized.x * uvNormalized.y);
 		const float smoothDistortionMagnitude = pow(distortionMagnitude, gLensDistortionParameter.tightness);
-		//const float smoothDistortionMagnitude = 1 - sqrt(1 - pow(distortionMagnitude, 5.0f));
-		//const float smoothDistortionMagnitude = pow(sin(1.57079632679f * distortionMagnitude), 10.0f);
+		//const float smoothDistortionMagnitude = 1 - sqrt(1 - pow(distortionMagnitude, gLensDistortionParameter.tightness));
+		//const float smoothDistortionMagnitude = pow(sin(1.57079632679f * distortionMagnitude), gLensDistortionParameter.tightness);
 		float2 uvDistorted = input.texcoord + uvNormalized * smoothDistortionMagnitude * gLensDistortionParameter.strength;
 		if (uvDistorted[0] < 0 || uvDistorted[0] > 1 || uvDistorted[1] < 0 || uvDistorted[1] > 1) {
 			textureColor = 0.0f;
 			blurColor = 0.0f;
 			shrinkBlurColor = 0.0f;
+			linearDepthColor = 0.0f;
 			depthColor = 0.0f;
 		}
 		else {
 			textureColor = gTexture.Sample(gSampler, uvDistorted);
 			blurColor = gBlurTexture.Sample(gSampler, uvDistorted);
 			shrinkBlurColor = gShrinkBlurTexture.Sample(gSampler, uvDistorted);
-			depthColor = gDepthTexture.Sample(gSampler, uvDistorted).r;
+			linearDepthColor = gLinearDepthTexture.Sample(gSampler, uvDistorted).r;
+			depthColor = gDepthTexture.Sample(gSampler, uvDistorted);
 		}
 	}
 
@@ -70,7 +74,11 @@ PixelShaderOutput main(VertexShaderOutput input) {
 	//Fog
 	if (gFogParameter.enable == true) {
 		float fogWeight = 0.0f;
-		fogWeight += gFogParameter.scale * max(0.0f, 1.0f - exp(-gFogParameter.attenuationRate * depthColor));
+		//float x = (1.0f - 30.0f / 0.1f);
+		//float y = (30.0f / 0.1f);
+		//float linearDepth = 1.0f / (x * depthColor + y);
+		//fogWeight += gFogParameter.scale * max(0.0f, 1.0f - exp(-gFogParameter.attenuationRate * linearDepth));
+		fogWeight += gFogParameter.scale * max(0.0f, 1.0f - exp(-gFogParameter.attenuationRate * linearDepthColor));
 		const float3 bgColor = textureColor.rgb;
 		const float3 bgBlurColor = blurColor.rgb;
 		const float3 bgShrinkBlurColor = shrinkBlurColor.rgb;
@@ -84,11 +92,11 @@ PixelShaderOutput main(VertexShaderOutput input) {
 	//被写界深度
 	if (gDofParameter.enable == true) {
 		float d = 0.0f;
-		if (depthColor > 0.0f && depthColor < 0.5f) {
-			d = 2 * depthColor;
+		if (linearDepthColor > 0.0f && linearDepthColor < 0.5f) {
+			d = 2 * linearDepthColor;
 		}
-		else if (depthColor > 0.5f && depthColor < 1.0f) {
-			d = 2 * (1 - depthColor);
+		else if (linearDepthColor > 0.5f && linearDepthColor < 1.0f) {
+			d = 2 * (1 - linearDepthColor);
 		}
 		float coef = 1.0 - d;
 		float blur1Coef = coef * d;

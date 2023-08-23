@@ -1,4 +1,4 @@
-# Blender MTL File: 'Skydome.blend'
+# Blender MTL File: 'monsterBall.blend'
 # Material Count: 1
 
 newmtl Material
@@ -10,4 +10,4 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Kd Night_Basin.jpg
+map_Kd monsterBall.png
